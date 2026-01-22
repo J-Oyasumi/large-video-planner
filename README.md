@@ -370,4 +370,30 @@ This command wraps the steps above and consolidates artifacts under `<output__di
 - `frames/` – RGB frames extracted from the input video.
 - `summary.json` – helpful index linking the video, calibration, and retarget outputs.
 
+### Real Robot Execution
+
+For executing generated hand commands on a real robot (e.g., Unitree G1 with Inspire hands), you can integrate the hand controller with the arm controller for unified control:
+
+```python
+# Initialize hand command publisher and hand state subscriber
+self.HandCmb_publisher = ChannelPublisher(kTopicInspireCommand, MotorCmds_)
+self.HandCmb_publisher.Init()
+
+self.HandState_subscriber = ChannelSubscriber(kTopicInspireState, MotorStates_)
+self.HandState_subscriber.Init()
+
+# Initialize hand message with motor commands
+self.hand_msg = MotorCmds_()
+self.hand_msg.cmds = [unitree_go_msg_dds__MotorCmd_() for _ in range(
+    len(Inspire_Right_Hand_JointIndex) + len(Inspire_Left_Hand_JointIndex)
+)]
+```
+
+When you need to send hand commands to the robot:
+```python
+arm.HandCmb_publisher.Write(arm.hand_msg)
+```
+
+For a complete reference implementation, see the [Unitree XR Teleoperate repository](https://github.com/unitreerobotics/xr_teleoperate.git).
+
 
