@@ -6,7 +6,7 @@ params:
   partition: kempner_h100_priority2 # e.g. kempner_h100
   account: kempner_sham_lab # e.g. kempner_sham_lab
   env_name: wm
-  num_gpus: 4
+  num_gpus: 1
   num_cpus: 48
   memory: 512G
   time: "14-00:00:00" 

@@ -1,5 +1,5 @@
 from .attention import flash_attention
-from .model import WanModel
+from .model import WanModel, WanRGBXYZModel
 from .t5 import T5Decoder, T5Encoder, T5EncoderModel, T5Model
 from .tokenizers import HuggingfaceTokenizer
 from .vae import WanVAE
@@ -7,6 +7,7 @@ from .vae import WanVAE
 __all__ = [
     'WanVAE',
     'WanModel',
+    'WanRGBXYZModel',
     'T5Model',
     'T5Encoder',
     'T5Decoder',

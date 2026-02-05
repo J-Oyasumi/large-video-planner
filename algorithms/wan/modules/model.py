@@ -690,3 +690,123 @@ class WanModel(ModelMixin, ConfigMixin):
         nn.init.xavier_uniform_(new_weight.flatten(1))
         new_weight[:, : self.in_dim] = self.patch_embedding.weight[:, : self.in_dim]
         self.patch_embedding.weight.copy_(new_weight)
+
+
+class ModalityEmbedding(nn.Module):
+    def __init__(self, dim):
+        self.rgb_embed = nn.Parameter(torch.zeros(dim))
+        self.xyz_embed = nn.Paremeter(torch.zeros(dim))
+
+    def forward(self, x: torch.Tensor):
+        """
+        Args:
+            x: (1, C, T, H, W)
+        """
+        rgb_lat, xyz_lat = torch.chunk(x, dim=-1, chunks=2)
+        rgb_lat = rgb_lat + self.rgb_embed
+        xyz_lat = xyz_lat + self.xyz_embed
+        return torch.cat([rgb_lat, xyz_lat], dim=-1)
+
+
+class WanRGBXYZModel(WanModel):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+    
+    def init_weights(self):
+        super().init_weights()
+        # init Modality Embedding
+        self.modality_embedding = ModalityEmbedding(self.dim)
+
+    def forward(
+        self,
+        x,
+        t,
+        context,
+        seq_len,
+        clip_fea=None,
+        y=None,
+    ):
+        r"""
+        Difference from WanModel:
+        - Add Modality Embedding to RGB and XYZ latent
+        - Repeat RoPE along width 
+        """
+        n_frames = x.shape[2]
+        if self.model_type == "i2v":
+            assert clip_fea is not None and y is not None
+        # params
+        device = self.patch_embedding.weight.device
+        if self.freqs.device != device:
+            self.freqs = self.freqs.to(device)
+
+        if y is not None:
+            x = [torch.cat([u, v], dim=0) for u, v in zip(x, y)]
+
+        # embeddings
+        x = [self.patch_embedding(u.unsqueeze(0)) for u in x]
+        # NOTE: add modality embedding
+        x = [self.modality_embedding(u.unsqueeze(0)) for u in x]
+        grid_sizes = torch.stack(
+            [torch.tensor(u.shape[2:], dtype=torch.long) for u in x]
+        )
+        x = [u.flatten(2).transpose(1, 2) for u in x]
+        seq_lens = torch.tensor([u.size(1) for u in x], dtype=torch.long)
+        assert seq_lens.max() <= seq_len
+        x = torch.cat(
+            [
+                torch.cat([u, u.new_zeros(1, seq_len - u.size(1), u.size(2))], dim=1)
+                for u in x
+            ]
+        )
+
+        # time embeddings
+        # with amp.autocast("cuda", dtype=torch.float32):
+        t_shape = tuple(t.shape)
+        e = self.time_embedding(
+            sinusoidal_embedding_1d(self.freq_dim, t.flatten()).type_as(x)
+        )
+        if t.ndim == 2:
+            e = e.unflatten(dim=0, sizes=t_shape)
+        else:
+            e = repeat(e, "b c -> b f c", f=n_frames)
+        e0 = self.time_projection(e).unflatten(-1, (6, self.dim))
+        # assert e.dtype == torch.float32 and e0.dtype == torch.float32
+
+        # context
+        context_lens = None
+        context = self.text_embedding(
+            torch.stack(
+                [
+                    torch.cat([u, u.new_zeros(self.text_len - u.size(0), u.size(1))])
+                    for u in context
+                ]
+            )
+        )
+
+        if clip_fea is not None:
+            context_clip = self.img_emb(clip_fea)  # bs x 257 x dim
+            context = torch.concat([context_clip, context], dim=1)
+
+        # arguments
+        kwargs = dict(
+            e=e0,
+            seq_lens=seq_lens,
+            grid_sizes=grid_sizes,
+            freqs=self.freqs,
+            context=context,
+            context_lens=context_lens,
+        )
+
+        for i, block in enumerate(self.blocks):
+            block = partial(block, **kwargs)
+            if i in self.gradient_checkpointing_indices:
+                x = checkpoint(block, x, use_reentrant=False)
+            else:
+                x = block(x)
+
+        # head
+        x = self.head(x, e)
+
+        # unpatchify
+        x = self.unpatchify(x, grid_sizes)
+        return torch.stack(x)

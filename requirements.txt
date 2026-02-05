@@ -1,8 +1,8 @@
 # Core ML frameworks
-torch==2.6.0
-torchvision==0.21.0
-pytorch-lightning==2.5.0.post0
-lightning==2.6.0
+torch==2.8.0
+torchvision==0.23.0
+pytorch-lightning
+lightning
 numpy==1.24.4
 
 # Language Models & Diffusion
@@ -21,7 +21,7 @@ pyyaml==6.0.2
 # Experiment Tracking
 wandb==0.19.1
 wandb-osh==1.2.2
-tensorboard==2.19.0
+tensorboard>=2.15,<2.16
 
 # Media Processing
 opencv-python==4.9.0.80

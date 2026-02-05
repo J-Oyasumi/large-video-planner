@@ -43,6 +43,7 @@ class VideoPredictionExperiment(BaseLightningExperiment):
         agibot_world=AgibotWorldDataset,
         language_table=OpenXVideoDataset,
         ours_test=SingleFrameVideoDataset,
+        my_test=SingleFrameVideoDataset,
         # austin_buds=OpenXVideoDataset,
         # austin_sailor=OpenXVideoDataset,
         # austin_sirius=OpenXVideoDataset,
@@ -73,6 +74,11 @@ class VideoPredictionExperiment(BaseLightningExperiment):
         if self.cfg.strategy == "ddp":
             return super()._build_strategy()
         elif self.cfg.strategy == "fsdp":
+            # FSDP requires multiple GPUs. Fall back to DDP for single GPU.
+            total_gpus = torch.cuda.device_count() * self.cfg.num_nodes
+            if total_gpus < 2:
+                return super()._build_strategy()
+            
             if self.cfg.num_nodes >= 8:
                 device_mesh = (self.cfg.num_nodes // 8, 32)
             else:

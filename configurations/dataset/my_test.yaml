@@ -1,0 +1,12 @@
+defaults:
+  - video_base
+  - _self_
+
+data_root: data/my_test
+metadata_path: metadata.csv
+
+test_percentage: 1.0
+load_prompt_embed: false
+
+filtering:
+  disable: true
