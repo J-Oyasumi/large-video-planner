@@ -40,7 +40,7 @@ def rope_params(max_seq_len, dim, theta=10000):
 
 
 # @amp.autocast("cuda", enabled=False)
-def rope_apply(x, grid_sizes, freqs):
+def rope_apply(x, grid_sizes, freqs, *, repeat_width: int = 1):
     n, c = x.size(2), x.size(3) // 2
 
     # split freqs
@@ -55,11 +55,27 @@ def rope_apply(x, grid_sizes, freqs):
         x_i = torch.view_as_complex(
             x[i, :seq_len].to(torch.float64).reshape(seq_len, n, -1, 2)
         )
+        if repeat_width != 1:
+            if repeat_width < 1:
+                raise ValueError(f"{repeat_width=} must be >= 1.")
+            if w % repeat_width != 0:
+                raise ValueError(
+                    f"{repeat_width=} requires width divisible by repeat_width, got {w=}."
+                )
+            base_w = w // repeat_width
+            if base_w > freqs[2].size(0):
+                raise ValueError(
+                    f"Width after repeating too large for RoPE table: {base_w=} > {freqs[2].size(0)=}."
+                )
+            w_ids = torch.arange(w, device=freqs[2].device) % base_w
+            freqs_w = freqs[2].index_select(0, w_ids)
+        else:
+            freqs_w = freqs[2][:w]
         freqs_i = torch.cat(
             [
                 freqs[0][:f].view(f, 1, 1, -1).expand(f, h, w, -1),
                 freqs[1][:h].view(1, h, 1, -1).expand(f, h, w, -1),
-                freqs[2][:w].view(1, 1, w, -1).expand(f, h, w, -1),
+                freqs_w.view(1, 1, w, -1).expand(f, h, w, -1),
             ],
             dim=-1,
         ).reshape(seq_len, 1, -1)
@@ -116,6 +132,7 @@ class WanSelfAttention(nn.Module):
         self.window_size = window_size
         self.qk_norm = qk_norm
         self.eps = eps
+        self.rope_width_repeat = 1
 
         # layers
         self.q = nn.Linear(dim, dim)
@@ -145,8 +162,8 @@ class WanSelfAttention(nn.Module):
         q, k, v = qkv_fn(x)
 
         x = flash_attention(
-            q=rope_apply(q, grid_sizes, freqs),
-            k=rope_apply(k, grid_sizes, freqs),
+            q=rope_apply(q, grid_sizes, freqs, repeat_width=self.rope_width_repeat),
+            k=rope_apply(k, grid_sizes, freqs, repeat_width=self.rope_width_repeat),
             v=v,
             k_lens=seq_lens,
             window_size=self.window_size,
@@ -694,8 +711,9 @@ class WanModel(ModelMixin, ConfigMixin):
 
 class ModalityEmbedding(nn.Module):
     def __init__(self, dim):
-        self.rgb_embed = nn.Parameter(torch.zeros(dim))
-        self.xyz_embed = nn.Paremeter(torch.zeros(dim))
+        super().__init__()
+        self.rgb_embed = nn.Parameter(torch.zeros(1, dim, 1, 1, 1))
+        self.xyz_embed = nn.Parameter(torch.zeros(1, dim, 1, 1, 1))
 
     def forward(self, x: torch.Tensor):
         """
@@ -716,6 +734,8 @@ class WanRGBXYZModel(WanModel):
         super().init_weights()
         # init Modality Embedding
         self.modality_embedding = ModalityEmbedding(self.dim)
+        for block in self.blocks:
+            block.self_attn.rope_width_repeat = 2
 
     def forward(
         self,
@@ -745,7 +765,7 @@ class WanRGBXYZModel(WanModel):
         # embeddings
         x = [self.patch_embedding(u.unsqueeze(0)) for u in x]
         # NOTE: add modality embedding
-        x = [self.modality_embedding(u.unsqueeze(0)) for u in x]
+        x = [self.modality_embedding(u) for u in x]
         grid_sizes = torch.stack(
             [torch.tensor(u.shape[2:], dtype=torch.long) for u in x]
         )

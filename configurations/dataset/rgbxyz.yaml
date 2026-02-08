@@ -1,0 +1,17 @@
+defaults:
+  - video_base
+  - _self_
+
+# Dataset that provides both:
+#  - rgb: video file (e.g. mp4) in `rgb_path`
+#  - xyz: npz file in `xyz_path` containing key `xyz` with shape (T, H, W, 3)
+#
+# Both paths are resolved relative to `data_root` in the metadata CSV.
+data_root: ???
+metadata_path: ???
+
+# Most custom datasets won't have prompt embeddings on disk.
+load_prompt_embed: false
+
+filtering:
+  disable: true
