@@ -103,9 +103,42 @@ class WanRGBXYZ(WanImageToVideo):
             )
             if self.is_inference:
                 self.model.to(torch.bfloat16)
-            self.model.load_state_dict(
-                self._load_tuned_state_dict(), assign=not self.is_inference
+            loaded_state_dict = self._load_tuned_state_dict()
+            model_state_dict = self.model.state_dict()
+            filtered_state_dict = {}
+            mismatched_keys = []
+            for key, value in loaded_state_dict.items():
+                if key not in model_state_dict:
+                    continue
+                if model_state_dict[key].shape != value.shape:
+                    mismatched_keys.append(
+                        (key, tuple(value.shape), tuple(model_state_dict[key].shape))
+                    )
+                    continue
+                filtered_state_dict[key] = value
+
+            load_result = self.model.load_state_dict(
+                filtered_state_dict,
+                strict=False,
+                assign=not self.is_inference,
             )
+
+            logging.info(
+                "Loaded tuned checkpoint for WanRGBXYZ: matched=%d, missing=%d, unexpected=%d, shape_mismatch=%d",
+                len(filtered_state_dict),
+                len(load_result.missing_keys),
+                len(load_result.unexpected_keys),
+                len(mismatched_keys),
+            )
+            if mismatched_keys:
+                preview = ", ".join(
+                    f"{k}: ckpt{src_shape}->model{dst_shape}"
+                    for k, src_shape, dst_shape in mismatched_keys[:10]
+                )
+                logging.warning(
+                    "Skipped mismatched checkpoint keys (showing up to 10): %s",
+                    preview,
+                )
         if not self.is_inference:
             self.model.to(self.dtype).train()
         if self.gradient_checkpointing_rate > 0:
@@ -233,3 +266,9 @@ class WanRGBXYZ(WanImageToVideo):
         rgb_lat = self.vae.decode(rgb_lat, self.vae_scale).clamp_(-1, 1)
         xyz_lat = self.vae.decode(xyz_lat, self.vae_scale).clamp_(-1, 1)
         return torch.cat([rgb_lat, xyz_lat], dim=-1)
+
+    def validation_step(self, batch, batch_idx=None):
+        if "videos" not in batch and "rgb" in batch:
+            batch = dict(batch)
+            batch["videos"] = batch["rgb"]
+        return super().validation_step(batch, batch_idx)
