@@ -17,7 +17,15 @@ RUN_NAME="${3:-joint_rgbxyz}"
 EXTRA_ARGS=("${@:4}")
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "${SCRIPT_DIR}/large-video-planner"
+if [[ -f "${SCRIPT_DIR}/main.py" ]]; then
+  PROJECT_ROOT="${SCRIPT_DIR}"
+elif [[ -f "${SCRIPT_DIR}/large-video-planner/main.py" ]]; then
+  PROJECT_ROOT="${SCRIPT_DIR}/large-video-planner"
+else
+  echo "ERROR: cannot locate project root from ${SCRIPT_DIR}" >&2
+  exit 1
+fi
+cd "${PROJECT_ROOT}"
 
 python -m main \
   +name="${RUN_NAME}" \
@@ -30,4 +38,3 @@ python -m main \
   algorithm.hist_guidance=0 \
   experiment.validation.val_every_n_step=100000000 \
   "${EXTRA_ARGS[@]}"
-
