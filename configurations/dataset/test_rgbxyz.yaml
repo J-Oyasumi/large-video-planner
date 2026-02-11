@@ -1,0 +1,12 @@
+defaults:
+  - video_base
+  - _self_
+
+data_root: ???
+metadata_path: ???
+
+test_percentage: 1.0
+load_prompt_embed: false
+
+filtering:
+  disable: true

@@ -1,11 +1,11 @@
 #!/bin/bash
-#SBATCH -J lvp_joint_rgbxyz
-#SBATCH -o slurm-%x-%j.out
-#SBATCH -e slurm-%x-%j.err
+#SBATCH -J lvp_rgb
+#SBATCH -o logs/slurm-%x-%j.out
+#SBATCH -e logs/slurm-%x-%j.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=4
 #SBATCH --gres=gpu:4
-#SBATCH --time=48:00:00
+#SBATCH --time=96:00:00
 #SBATCH --mem=256G
 #SBATCH --partition=dgx-b200
 
@@ -19,20 +19,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${SLURM_SUBMIT_DIR:-${SCRIPT_DIR}}"
 cd "${REPO_ROOT}"
 
-if [[ -x "${REPO_ROOT}/train_wan_rgbxyz.sh" ]]; then
-  TRAIN_LAUNCHER="${REPO_ROOT}/train_wan_rgbxyz.sh"
-elif [[ -x "${REPO_ROOT}/../train_wan_rgbxyz.sh" ]]; then
-  TRAIN_LAUNCHER="${REPO_ROOT}/../train_wan_rgbxyz.sh"
-else
-  echo "ERROR: cannot find train_wan_rgbxyz.sh from REPO_ROOT=${REPO_ROOT}" >&2
-  exit 1
-fi
+TRAIN_LAUNCHER="${REPO_ROOT}/train_wan_rgb.sh"
 
 # ======== EDIT THESE (or set env vars before sbatch) ========
 DATA_ROOT="/vast/projects/jgu32/lab/mutian/FoundationStereo"
 # Can be relative to DATA_ROOT (recommended) or an absolute path.
 METADATA_CSV="droid_processed/metadata_cap_norm_withcaption.csv"
-RUN_NAME="${RUN_NAME:-joint_rgbxyz_$(date +%m%d)_49f_480x832_bs1x4}"
+RUN_NAME="${RUN_NAME:-only_rgb_$(date +%m%d)_49f_480x832_bs1x4}"
 
 WANDB_MODE="${WANDB_MODE:-online}" # online|offline|disabled
 WANDB_ENTITY="${WANDB_ENTITY:-hanjiang-nju}"
@@ -41,7 +34,7 @@ WANDB_PROJECT="${WANDB_PROJECT:-lvp}"
 WANDB_DIR="${WANDB_DIR:-${SLURM_SUBMIT_DIR:-${HOME}}/wandb}"
 
 # Common overrides (tune as needed)
-BATCH_SIZE="${BATCH_SIZE:-1}"
+BATCH_SIZE="${BATCH_SIZE:-2}"
 CKPT_EVERY="${CKPT_EVERY:-50}"
 NUM_WORKERS="${NUM_WORKERS:-6}"
 TUNED_CKPT="${TUNED_CKPT:-data/ckpts/lvp_14B.ckpt}"
@@ -66,7 +59,6 @@ srun "${TRAIN_LAUNCHER}" "${DATA_ROOT}" "${METADATA_CSV}" "${RUN_NAME}" \
   experiment.num_nodes=1 \
   experiment.training.batch_size="${BATCH_SIZE}" \
   experiment.training.data.num_workers="${NUM_WORKERS}" \
-  experiment.validation.val_every_n_step=100 \
-  experiment.validation.data.num_workers=8 \
+  experiment.validation.val_every_n_step=10 \
   experiment.training.checkpointing.every_n_train_steps="${CKPT_EVERY}" \
   "${TUNED_CKPT_ARGS[@]}"

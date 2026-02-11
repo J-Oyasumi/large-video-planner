@@ -40,6 +40,9 @@ class WanRGBXYZ(WanImageToVideo):
         self.max_tokens = self.max_tokens * 2
 
     def configure_model(self):
+        """
+        This is same as WanI2V except it initializes WanRGBXYZModel rather than WanModel
+        """
         logging.info("Building model...")
         # Initialize text encoder
         if not self.cfg.load_prompt_embed:
@@ -95,6 +98,7 @@ class WanRGBXYZ(WanImageToVideo):
             self.vae = torch.compile(self.vae)
 
         # Initialize main diffusion model
+        # NOTE: The only difference from WanModel
         if self.cfg.model.tuned_ckpt_path is None:
             self.model = WanRGBXYZModel.from_pretrained(self.cfg.model.ckpt_path)
         else:
@@ -268,7 +272,42 @@ class WanRGBXYZ(WanImageToVideo):
         return torch.cat([rgb_lat, xyz_lat], dim=-1)
 
     def validation_step(self, batch, batch_idx=None):
-        if "videos" not in batch and "rgb" in batch:
-            batch = dict(batch)
-            batch["videos"] = batch["rgb"]
+        batch["videos"] = torch.cat([batch["rgb"], batch["xyz"]], dim=-1)
         return super().validation_step(batch, batch_idx)
+
+    def visualize_local(self, video_vis, batch_idx):
+        """
+        Save RGB as mp4 and XYZ as npz
+        """
+        import os
+        import imageio.v3 as iio
+        output_dir = os.path.join(self.cfg.logging.save_dir, f"step_{self.global_step}")
+        os.makedirs(output_dir, exist_ok=True)
+        for i in range(len(video_vis)):
+            if self.cfg.logging.video_type == "single":
+                pred_rgb, pred_xyz = torch.chunk(video_vis[i], 2, dim=-1)
+                pred_rgb = pred_rgb.numpy()
+                pred_xyz = pred_xyz.numpy()
+                iio.imwrite(os.path.join(output_dir, f"pred_rgb_{batch_idx}_{i}.mp4"), rearrange((pred_rgb * 255).astype(np.uint8), "t c h w -> t h w c"), fps=self.cfg.logging.fps)
+                iio.imwrite(os.path.join(output_dir, f"pred_xyz_{batch_idx}_{i}.mp4"), rearrange((pred_xyz * 255).astype(np.uint8), "t c h w -> t h w c"), fps=self.cfg.logging.fps)
+                # save XYZ as npz
+                pred_xyz = (pred_xyz - 0.5) * 2.0
+                np.savez_compressed(os.path.join(output_dir, f"pred_xyz_{batch_idx}_{i}.npz"), xyz=pred_xyz)
+            else:
+                pred_rgb, pred_xyz, gt_rgb, gt_xyz = torch.chunk(video_vis[i], 4, dim=-1) # (T, C, H, W) [0, 1]
+                pred_rgb = pred_rgb.numpy()
+                pred_xyz = pred_xyz.numpy()
+                gt_rgb = gt_rgb.numpy()
+                gt_xyz = gt_xyz.numpy()
+                iio.imwrite(os.path.join(output_dir, f"pred_rgb_{batch_idx}_{i}.mp4"), rearrange((pred_rgb * 255).astype(np.uint8), "t c h w -> t h w c"), fps=self.cfg.logging.fps)
+                iio.imwrite(os.path.join(output_dir, f"pred_xyz_{batch_idx}_{i}.mp4"), rearrange((pred_xyz * 255).astype(np.uint8), "t c h w -> t h w c"), fps=self.cfg.logging.fps)
+                iio.imwrite(os.path.join(output_dir, f"gt_rgb_{batch_idx}_{i}.mp4"), rearrange((gt_rgb * 255).astype(np.uint8), "t c h w -> t h w c"), fps=self.cfg.logging.fps)
+                iio.imwrite(os.path.join(output_dir, f"gt_xyz_{batch_idx}_{i}.mp4"), rearrange((gt_xyz * 255).astype(np.uint8), "t c h w -> t h w c"), fps=self.cfg.logging.fps)
+
+                # save XYZ as npz
+                pred_xyz = (pred_xyz - 0.5) * 2.0
+                gt_xyz = (gt_xyz - 0.5) * 2.0
+                np.savez_compressed(os.path.join(output_dir, f"pred_xyz_{batch_idx}_{i}.npz"), xyz=pred_xyz)
+                np.savez_compressed(os.path.join(output_dir, f"gt_xyz_{batch_idx}_{i}.npz"), gt_xyz)
+
+        return

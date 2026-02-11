@@ -726,10 +726,7 @@ class ModalityEmbedding(nn.Module):
         return torch.cat([rgb_lat, xyz_lat], dim=-1)
 
 
-class WanRGBXYZModel(WanModel):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-    
+class WanRGBXYZModel(WanModel):    
     def init_weights(self):
         super().init_weights()
         # init Modality Embedding

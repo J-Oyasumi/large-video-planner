@@ -6,4 +6,4 @@ defaults:
 # By default, start from the Wan2.1 I2V base checkpoint (no tuned checkpoint),
 # because RGB-only tuned checkpoints will not contain the RGB/XYZ-specific params.
 model:
-  tuned_ckpt_path: null
+  tuned_ckpt_path: data/ckpts/lvp_14B.ckpt

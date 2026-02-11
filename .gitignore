@@ -1,1 +1,6 @@
 **/*.pyc
+**/*.tmp
+outputs
+logs/
+data/
+outputs_mutian

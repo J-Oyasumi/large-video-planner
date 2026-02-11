@@ -36,6 +36,9 @@ logging:
   loss_freq: 1
   video_freq: 1000
   video_type: grid # grid or single
+  # do not save videos locally during training
+  save_local: false
+  save_dir: null
   fps: ${dataset.fps}
 
 serving:
