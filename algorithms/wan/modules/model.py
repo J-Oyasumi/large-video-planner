@@ -710,10 +710,13 @@ class WanModel(ModelMixin, ConfigMixin):
 
 
 class ModalityEmbedding(nn.Module):
-    def __init__(self, dim):
+    def __init__(self, dim, scale: float = 2.0, init_std: float = 0.02):
         super().__init__()
-        self.rgb_embed = nn.Parameter(torch.zeros(1, dim, 1, 1, 1))
-        self.xyz_embed = nn.Parameter(torch.zeros(1, dim, 1, 1, 1))
+        self.scale = float(scale)
+        self.rgb_embed = nn.Parameter(torch.empty(1, dim, 1, 1, 1))
+        self.xyz_embed = nn.Parameter(torch.empty(1, dim, 1, 1, 1))
+        nn.init.normal_(self.rgb_embed, mean=0.0, std=init_std)
+        nn.init.normal_(self.xyz_embed, mean=0.0, std=init_std)
 
     def forward(self, x: torch.Tensor):
         """
@@ -721,12 +724,12 @@ class ModalityEmbedding(nn.Module):
             x: (1, C, T, H, W)
         """
         rgb_lat, xyz_lat = torch.chunk(x, dim=-1, chunks=2)
-        rgb_lat = rgb_lat + self.rgb_embed
-        xyz_lat = xyz_lat + self.xyz_embed
+        rgb_lat = rgb_lat + self.scale * self.rgb_embed
+        xyz_lat = xyz_lat + self.scale * self.xyz_embed
         return torch.cat([rgb_lat, xyz_lat], dim=-1)
 
 
-class WanRGBXYZModel(WanModel):    
+class WanRGBXYZModel(WanModel):
     def init_weights(self):
         super().init_weights()
         # init Modality Embedding

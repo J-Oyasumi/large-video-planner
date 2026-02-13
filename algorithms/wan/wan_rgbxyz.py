@@ -38,6 +38,51 @@ class WanRGBXYZ(WanImageToVideo):
         self.lat_w = self.lat_w * 2
         self.max_area = self.max_area * 2
         self.max_tokens = self.max_tokens * 2
+        xyz_norm_cfg = getattr(cfg, "xyz_latent_norm", None)
+        self.xyz_latent_norm_enabled = bool(
+            xyz_norm_cfg is not None and getattr(xyz_norm_cfg, "enabled", False)
+        )
+        self.xyz_latent_norm_eps = float(
+            getattr(xyz_norm_cfg, "eps", 1e-6) if xyz_norm_cfg is not None else 1e-6
+        )
+
+    def _configure_modality_embedding(self):
+        if not hasattr(self, "model") or not hasattr(self.model, "modality_embedding"):
+            return
+        modality_cfg = getattr(self.cfg, "modality_embedding", None)
+        if modality_cfg is None:
+            return
+
+        module = self.model.modality_embedding
+        scale = float(getattr(modality_cfg, "scale", module.scale))
+        nonzero_init = bool(getattr(modality_cfg, "nonzero_init", True))
+        init_std = float(getattr(modality_cfg, "init_std", 0.02))
+        reinit_on_start = bool(getattr(modality_cfg, "reinit_on_start", False))
+        init_std = max(init_std, 0.0)
+
+        module.scale = scale
+
+        with torch.no_grad():
+            if not nonzero_init:
+                module.rgb_embed.zero_()
+                module.xyz_embed.zero_()
+                logging.info(
+                    "Modality embedding configured: zero init, scale=%.4f",
+                    module.scale,
+                )
+            elif reinit_on_start:
+                nn.init.normal_(module.rgb_embed, mean=0.0, std=init_std)
+                nn.init.normal_(module.xyz_embed, mean=0.0, std=init_std)
+                logging.info(
+                    "Modality embedding configured: normal init std=%.4f, scale=%.4f",
+                    init_std,
+                    module.scale,
+                )
+            else:
+                logging.info(
+                    "Modality embedding configured: keep checkpoint/default init, scale=%.4f",
+                    module.scale,
+                )
 
     def configure_model(self):
         """
@@ -94,6 +139,23 @@ class WanRGBXYZ(WanImageToVideo):
             "vae_inv_std", 1.0 / torch.tensor(self.cfg.vae.std, dtype=self.dtype)
         )
         self.vae_scale = [self.vae_mean, self.vae_inv_std]
+        if self.xyz_latent_norm_enabled:
+            xyz_mean = float(self.cfg.xyz_latent_norm.mean)
+            xyz_std = float(self.cfg.xyz_latent_norm.std)
+            xyz_std = max(abs(xyz_std), self.xyz_latent_norm_eps)
+            self.register_buffer(
+                "xyz_latent_mean",
+                torch.tensor(xyz_mean, dtype=self.dtype),
+            )
+            self.register_buffer(
+                "xyz_latent_inv_std",
+                torch.tensor(1.0 / xyz_std, dtype=self.dtype),
+            )
+            logging.info(
+                "XYZ latent normalization enabled: mean=%.6f std=%.6f",
+                xyz_mean,
+                xyz_std,
+            )
         if self.cfg.vae.compile:
             self.vae = torch.compile(self.vae)
 
@@ -147,6 +209,7 @@ class WanRGBXYZ(WanImageToVideo):
             self.model.to(self.dtype).train()
         if self.gradient_checkpointing_rate > 0:
             self.model.gradient_checkpointing_enable(p=self.gradient_checkpointing_rate)
+        self._configure_modality_embedding()
         if self.cfg.model.compile:
             self.model = torch.compile(self.model)
 
@@ -198,6 +261,7 @@ class WanRGBXYZ(WanImageToVideo):
 
         rgb_lat = self.encode_video(rearrange(rgbs, "b t c h w -> b c t h w"))
         xyz_lat = self.encode_video(rearrange(xyzs, "b t c h w -> b c t h w"))
+        xyz_lat = self.normalize_xyz_latent(xyz_lat)
         # video_lat ~ (b, lat_c, lat_t, lat_h, lat_w)
 
         batch["prompt_embeds"] = prompt_embeds
@@ -267,9 +331,20 @@ class WanRGBXYZ(WanImageToVideo):
 
     def decode_video(self, zs):
         rgb_lat, xyz_lat = torch.chunk(zs, dim=-1, chunks=2)
+        xyz_lat = self.denormalize_xyz_latent(xyz_lat)
         rgb_lat = self.vae.decode(rgb_lat, self.vae_scale).clamp_(-1, 1)
         xyz_lat = self.vae.decode(xyz_lat, self.vae_scale).clamp_(-1, 1)
         return torch.cat([rgb_lat, xyz_lat], dim=-1)
+
+    def normalize_xyz_latent(self, xyz_lat):
+        if not self.xyz_latent_norm_enabled or not hasattr(self, "xyz_latent_mean"):
+            return xyz_lat
+        return (xyz_lat - self.xyz_latent_mean) * self.xyz_latent_inv_std
+
+    def denormalize_xyz_latent(self, xyz_lat):
+        if not self.xyz_latent_norm_enabled or not hasattr(self, "xyz_latent_mean"):
+            return xyz_lat
+        return xyz_lat / self.xyz_latent_inv_std + self.xyz_latent_mean
 
     def validation_step(self, batch, batch_idx=None):
         batch["videos"] = torch.cat([batch["rgb"], batch["xyz"]], dim=-1)

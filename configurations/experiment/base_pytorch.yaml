@@ -32,6 +32,7 @@ training:
 
 
 validation:
+  split: validation # which split to sample validation batches from: validation|training|all
   precision: 16-mixed
   compile: False # whether to compile the model with torch.compile
   inference_mode: True # whether to run in inference mode

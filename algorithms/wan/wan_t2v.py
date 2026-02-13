@@ -212,19 +212,34 @@ class WanTextToVideo(BasePytorchAlgo):
         }
 
     def _load_tuned_state_dict(self, prefix="model."):
-        ckpt = torch.load(
-            self.cfg.model.tuned_ckpt_path,
-            mmap=True,
-            map_location="cpu",
-            weights_only=True,
-        )
-        state_dict = {
-            k[len(prefix) :]: v
-            for k, v in ckpt["state_dict"].items()
-            if k.startswith(prefix)
-        }
-        del ckpt
-        gc.collect()
+        # Avoid peak host-memory spikes when multiple distributed ranks load a
+        # large checkpoint simultaneously (common source of SLURM OOM kills).
+        if dist.is_available() and dist.is_initialized():
+            world_size = dist.get_world_size()
+            rank = dist.get_rank()
+        else:
+            world_size = 1
+            rank = 0
+
+        state_dict = None
+        for load_rank in range(world_size):
+            if rank == load_rank:
+                ckpt = torch.load(
+                    self.cfg.model.tuned_ckpt_path,
+                    mmap=True,
+                    map_location="cpu",
+                    weights_only=True,
+                )
+                state_dict = {
+                    k[len(prefix) :]: v
+                    for k, v in ckpt["state_dict"].items()
+                    if k.startswith(prefix)
+                }
+                del ckpt
+                gc.collect()
+            if world_size > 1:
+                dist.barrier()
+
         return state_dict
 
     def build_scheduler(self, is_training=True):
@@ -459,7 +474,24 @@ class WanTextToVideo(BasePytorchAlgo):
         loss = torch.nn.functional.mse_loss(flow_pred, flow)
 
         if self.global_step % self.cfg.logging.loss_freq == 0:
-            self.log("train/loss", loss, sync_dist=True)
+            self.log(
+                "train/loss",
+                loss,
+                on_step=True,
+                on_epoch=False,
+                prog_bar=True,
+                logger=True,
+                sync_dist=True,
+            )
+            self.log(
+                "train/global_step",
+                float(self.global_step),
+                on_step=True,
+                on_epoch=False,
+                prog_bar=False,
+                logger=True,
+                sync_dist=False,
+            )
 
         return loss
 
@@ -575,20 +607,26 @@ class WanTextToVideo(BasePytorchAlgo):
         else:
             video_vis = torch.cat([video_pred, video_gt], dim=-1).cpu()
         video_vis = video_vis * 0.5 + 0.5
-        video_vis = rearrange(self.all_gather(video_vis), "p b ... -> (p b) ...")
+        is_distributed = dist.is_available() and dist.is_initialized()
 
-        all_prompts = [None for _ in range(dist.get_world_size())]
-        dist.all_gather_object(all_prompts, batch["prompts"])
-        all_prompts = [item for sublist in all_prompts for item in sublist]
+        if is_distributed:
+            video_vis = rearrange(self.all_gather(video_vis), "p b ... -> (p b) ...")
+            all_prompts = [None for _ in range(dist.get_world_size())]
+            dist.all_gather_object(all_prompts, batch["prompts"])
+            all_prompts = [item for sublist in all_prompts for item in sublist]
+        else:
+            prompts = batch.get("prompts", [])
+            all_prompts = prompts if isinstance(prompts, list) else [prompts]
 
         if is_rank_zero:
             if self.cfg.logging.video_type == "single":
                 for i in range(min(len(video_vis), 16)):
+                    caption = all_prompts[i] if i < len(all_prompts) else None
                     self.log_video(
                         f"validation_vis/video_pred_{i}",
                         video_vis[i],
                         fps=self.cfg.logging.fps,
-                        caption=all_prompts[i],
+                        caption=caption,
                     )
             else:
                 self.log_video(

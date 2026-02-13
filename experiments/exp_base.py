@@ -124,7 +124,7 @@ class BasePytorchExperiment(BaseExperiment):
     compatible_datasets: Dict = NotImplementedError
 
     def _build_dataset(self, split: str) -> Optional[torch.utils.data.Dataset]:
-        if split in ["training", "test", "validation"]:
+        if split in ["training", "test", "validation", "all"]:
             return self.compatible_datasets[self.root_cfg.dataset._name](
                 self.root_cfg.dataset, split=split
             )
@@ -150,7 +150,8 @@ class BasePytorchExperiment(BaseExperiment):
             return None
 
     def _build_validation_loader(self) -> Optional[torch.utils.data.DataLoader]:
-        validation_dataset = self._build_dataset("validation")
+        validation_split = self.cfg.validation.get("split", "validation")
+        validation_dataset = self._build_dataset(validation_split)
         shuffle = (
             False
             if isinstance(validation_dataset, torch.utils.data.IterableDataset)
@@ -292,8 +293,8 @@ class BaseLightningExperiment(BasePytorchExperiment):
             self._build_logger()
 
         callbacks = []
-        # if self.logger:
-        #     callbacks.append(LearningRateMonitor("step", True))
+        if self.logger:
+            callbacks.append(LearningRateMonitor("step", True))
         if "checkpointing" in self.cfg.training:
             callbacks.append(
                 ModelCheckpoint(
@@ -321,6 +322,7 @@ class BaseLightningExperiment(BasePytorchExperiment):
             max_steps=self.cfg.training.max_steps,
             max_time=self.cfg.training.max_time,
             deterministic=True,
+            log_every_n_steps=1,
         )
 
         # if self.debug:

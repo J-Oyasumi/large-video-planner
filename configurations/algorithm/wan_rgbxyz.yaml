@@ -6,4 +6,24 @@ defaults:
 # By default, start from the Wan2.1 I2V base checkpoint (no tuned checkpoint),
 # because RGB-only tuned checkpoints will not contain the RGB/XYZ-specific params.
 model:
-  tuned_ckpt_path: data/ckpts/lvp_14B.ckpt
+  tuned_ckpt_path: null
+
+# Modality-aware normalization on XYZ latent:
+#   x_hat = (x - mean) / std   after VAE.encode on xyz branch
+#   x     = x_hat * std + mean before VAE.decode on xyz branch
+xyz_latent_norm:
+  enabled: true
+  mean: -0.227444
+  std: 1.437663
+  eps: 1e-6
+
+# RGB/XYZ modality embedding controls.
+# - scale: additive strength for modality embeddings
+# - nonzero_init: false -> force zero init; true -> keep/reinit non-zero
+# - init_std: std used when reinit_on_start=true
+# - reinit_on_start: reinitialize modality embedding at launch
+modality_embedding:
+  scale: 2.0
+  nonzero_init: true
+  init_std: 0.02
+  reinit_on_start: false

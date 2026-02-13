@@ -134,11 +134,15 @@ class BasePytorchAlgo(pl.LightningModule, ABC):
             video = np.clip(video, a_min=0, a_max=1) * 255
             video = video.astype(np.uint8)
 
+        log_step = self.global_step if step is None else step
+        # Keep the same step convention as Lightning's WandbLogger:
+        # log `trainer/global_step` in payload instead of passing `step=...`,
+        # which avoids out-of-order step warnings when mixed with other logs.
         self.logger.experiment.log(
             {
                 key: wandb.Video(video, fps=fps, format=format, caption=caption),
-            },
-            step=self.global_step if step is None else step,
+                "trainer/global_step": log_step,
+            }
         )
 
     def log_image(

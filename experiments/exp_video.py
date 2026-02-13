@@ -3,7 +3,7 @@ from torch.distributed.fsdp import MixedPrecision
 from torch.distributed.fsdp.wrap import ModuleWrapPolicy
 
 # from algorithms.cogvideo import CogVideoXImageToVideo, CogVideoXVAE
-from algorithms.wan import WanImageToVideo, WanTextToVideo, WanRGBXYZ
+from algorithms.wan import WanImageToVideo, WanTextToVideo, WanRGBXYZ, WanRGBXYZLoRA
 from datasets.dummy import DummyVideoDataset
 from datasets.openx_base import OpenXVideoDataset
 from datasets.droid import DroidVideoDataset
@@ -28,6 +28,7 @@ class VideoPredictionExperiment(BaseLightningExperiment):
         wan_i2v=WanImageToVideo,
         wan_t2v=WanTextToVideo,
         wan_rgbxyz=WanRGBXYZ,
+        wan_rgbxyz_lora=WanRGBXYZLoRA,
         wan_toy=WanImageToVideo,
     )
 
@@ -82,11 +83,13 @@ class VideoPredictionExperiment(BaseLightningExperiment):
             total_gpus = torch.cuda.device_count() * self.cfg.num_nodes
             if total_gpus < 2:
                 return super()._build_strategy()
-            
-            if self.cfg.num_nodes >= 8:
-                device_mesh = (self.cfg.num_nodes // 8, 32)
+
+            # Keep the original 32-way shard preference when possible,
+            # otherwise use all visible GPUs in one shard group.
+            if total_gpus >= 32 and total_gpus % 32 == 0:
+                device_mesh = (total_gpus // 32, 32)
             else:
-                device_mesh = (1, self.cfg.num_nodes * 4)
+                device_mesh = (1, total_gpus)
             return FSDPStrategy(
                 mixed_precision=MixedPrecision(
                     param_dtype=torch.bfloat16,
