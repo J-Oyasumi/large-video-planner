@@ -361,8 +361,8 @@ class WanRGBXYZ(WanImageToVideo):
         for i in range(len(video_vis)):
             if self.cfg.logging.video_type == "single":
                 pred_rgb, pred_xyz = torch.chunk(video_vis[i], 2, dim=-1)
-                pred_rgb = pred_rgb.numpy()
-                pred_xyz = pred_xyz.numpy()
+                pred_rgb = pred_rgb.cpu().numpy()
+                pred_xyz = pred_xyz.cpu().numpy()
                 iio.imwrite(os.path.join(output_dir, f"pred_rgb_{batch_idx}_{i}.mp4"), rearrange((pred_rgb * 255).astype(np.uint8), "t c h w -> t h w c"), fps=self.cfg.logging.fps)
                 iio.imwrite(os.path.join(output_dir, f"pred_xyz_{batch_idx}_{i}.mp4"), rearrange((pred_xyz * 255).astype(np.uint8), "t c h w -> t h w c"), fps=self.cfg.logging.fps)
                 # save XYZ as npz
@@ -370,10 +370,10 @@ class WanRGBXYZ(WanImageToVideo):
                 np.savez_compressed(os.path.join(output_dir, f"pred_xyz_{batch_idx}_{i}.npz"), xyz=pred_xyz)
             else:
                 pred_rgb, pred_xyz, gt_rgb, gt_xyz = torch.chunk(video_vis[i], 4, dim=-1) # (T, C, H, W) [0, 1]
-                pred_rgb = pred_rgb.numpy()
-                pred_xyz = pred_xyz.numpy()
-                gt_rgb = gt_rgb.numpy()
-                gt_xyz = gt_xyz.numpy()
+                pred_rgb = pred_rgb.cpu().numpy()
+                pred_xyz = pred_xyz.cpu().numpy()
+                gt_rgb = gt_rgb.cpu().numpy()
+                gt_xyz = gt_xyz.cpu().numpy()
                 iio.imwrite(os.path.join(output_dir, f"pred_rgb_{batch_idx}_{i}.mp4"), rearrange((pred_rgb * 255).astype(np.uint8), "t c h w -> t h w c"), fps=self.cfg.logging.fps)
                 iio.imwrite(os.path.join(output_dir, f"pred_xyz_{batch_idx}_{i}.mp4"), rearrange((pred_xyz * 255).astype(np.uint8), "t c h w -> t h w c"), fps=self.cfg.logging.fps)
                 iio.imwrite(os.path.join(output_dir, f"gt_rgb_{batch_idx}_{i}.mp4"), rearrange((gt_rgb * 255).astype(np.uint8), "t c h w -> t h w c"), fps=self.cfg.logging.fps)
@@ -383,6 +383,6 @@ class WanRGBXYZ(WanImageToVideo):
                 pred_xyz = (pred_xyz - 0.5) * 2.0
                 gt_xyz = (gt_xyz - 0.5) * 2.0
                 np.savez_compressed(os.path.join(output_dir, f"pred_xyz_{batch_idx}_{i}.npz"), xyz=pred_xyz)
-                np.savez_compressed(os.path.join(output_dir, f"gt_xyz_{batch_idx}_{i}.npz"), gt_xyz)
+                np.savez_compressed(os.path.join(output_dir, f"gt_xyz_{batch_idx}_{i}.npz"), xyz=gt_xyz)
 
         return

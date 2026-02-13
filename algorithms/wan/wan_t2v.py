@@ -637,6 +637,10 @@ class WanTextToVideo(BasePytorchAlgo):
                 )
 
         if is_rank_zero and self.cfg.logging.save_local:
+            print("======================")
+            print("Rank 0")
+            print(video_vis.shape)
+            print("======================")
             self.visualize_local(video_vis, batch_idx)
         
     def visualize_local(self, video_vis, batch_idx):
@@ -646,14 +650,15 @@ class WanTextToVideo(BasePytorchAlgo):
         output_dir = os.path.join(self.cfg.logging.save_dir, f"step_{self.global_step}")
         os.makedirs(output_dir, exist_ok=True)
         for i in range(len(video_vis)):
-            if self.cfg.logging.video_type == "single":
+            if self.cfg.logging.video_type == "grid":
                 pred, gt = torch.chunk(video_vis[i], 2, dim=-1)
-                pred = pred.numpy()
-                gt = gt.numpy()
-                iio.imwrite(os.path.join(output_dir, f"pred_{batch_idx}_{i}.mp4"), pred, fps=self.cfg.logging.fps)
-                iio.imwrite(os.path.join(output_dir, f"gt_{batch_idx}_{i}.mp4"), gt, fps=self.cfg.logging.fps)
+                pred = pred.cpu().numpy()
+                gt = gt.cpu().numpy()
+                iio.imwrite(os.path.join(output_dir, f"pred_{batch_idx}_{i}.mp4"), rearrange((pred * 255).astype(np.uint8), "t c h w -> t h w c"), fps=self.cfg.logging.fps)
+                iio.imwrite(os.path.join(output_dir, f"gt_{batch_idx}_{i}.mp4"), rearrange((gt * 255).astype(np.uint8), "t c h w -> t h w c"), fps=self.cfg.logging.fps)
             else:
-                iio.imwrite(os.path.join(output_dir, f"pred_{batch_idx}_{i}.mp4"), video_vis, fps=self.cfg.logging.fps)
+                pred = video_vis[i].cpu().numpy()
+                iio.imwrite(os.path.join(output_dir, f"pred_{batch_idx}_{i}.mp4"), rearrange((pred * 255).astype(np.uint8), "t c h w -> t h w c"), fps=self.cfg.logging.fps)
 
     def maybe_reset_socket(self):
         if not self.socket:

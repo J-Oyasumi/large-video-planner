@@ -14,6 +14,7 @@ two batches.
 """
 import argparse
 from pathlib import Path
+import json
 
 import decord
 import numpy as np
@@ -41,6 +42,21 @@ def _load_rgb_video(path: Path) -> torch.Tensor:
     frames = torch.from_numpy(frames)  # (T, H, W, 3)
     frames = frames.permute(0, 3, 1, 2)  # (T, C, H, W)
     return frames
+
+
+def _to_json_serializable(obj):
+    """Convert torch/numpy types to Python native types for JSON serialization."""
+    if isinstance(obj, dict):
+        return {k: _to_json_serializable(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [_to_json_serializable(v) for v in obj]
+    elif isinstance(obj, (np.integer, np.floating)):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif hasattr(obj, "item"):  # torch.Tensor
+        return obj.item()
+    return obj
 
 
 def _load_xyz(path: Path) -> torch.Tensor:
@@ -87,34 +103,30 @@ def main(args):
         raise RuntimeError(f"No valid pred/gt RGB pairs found in {input_dir}")
 
     # Stack all videos into a single batch: (B, T, C, H, W)
-    try:
-        pred_rgb_batch = torch.stack(pred_rgb_list, dim=0).to(device)
-        gt_rgb_batch = torch.stack(gt_rgb_list, dim=0).to(device)
-    except RuntimeError as e:
-        raise RuntimeError(
-            "Failed to stack RGB videos into a batch. "
-            "Check that all videos have the same shape (T, H, W)."
-        ) from e
+    pred_rgb_batch = torch.stack(pred_rgb_list, dim=0).to(device)
+    gt_rgb_batch = torch.stack(gt_rgb_list, dim=0).to(device)
 
     rgb_metrics = calculate_rgb_metrics(pred_rgb_batch, gt_rgb_batch, device=device)
     print("RGB metrics:")
     for k, v in rgb_metrics.items():
         print(f"  {k}: {v}")
 
+    results = {"input_dir": str(input_dir), "rgb_metrics": _to_json_serializable(rgb_metrics)}
+
     if args.calculate_xyz and len(pred_xyz_list) > 0:
-        try:
-            pred_xyz_batch = torch.stack(pred_xyz_list, dim=0)
-            gt_xyz_batch = torch.stack(gt_xyz_list, dim=0)
-        except RuntimeError as e:
-            raise RuntimeError(
-                "Failed to stack XYZ arrays into a batch. "
-                "Check that all XYZ arrays have the same shape (T, H, W, 3) or (B, T, H, W, 3)."
-            ) from e
+        pred_xyz_batch = torch.stack(pred_xyz_list, dim=0)
+        gt_xyz_batch = torch.stack(gt_xyz_list, dim=0)
 
         xyz_metrics = calculate_xyz_metrics(pred_xyz_batch, gt_xyz_batch)
         print("XYZ metrics:")
         for k, v in xyz_metrics.items():
             print(f"  {k}: {v}")
+        results["xyz_metrics"] = _to_json_serializable(xyz_metrics)
+
+    output_path = Path(args.output) if args.output else input_dir / "metrics.json"
+    with open(output_path, "w") as f:
+        json.dump(results, f, indent=2)
+    print(f"\nMetrics saved to {output_path}")
 
 @torch.no_grad()
 def calculate_rgb_metrics(rgb_1: torch.Tensor, rgb_2: torch.Tensor, device: str = "cuda", only_final: bool = False):
@@ -160,6 +172,7 @@ def calculate_xyz_metrics(xyz_1: torch.Tensor, xyz_2: torch.Tensor):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--input_dir", type=str, required=True)
+    parser.add_argument("--output", type=str, default=None, help="Output JSON path. Default: input_dir/metrics.json")
     parser.add_argument("--calculate_xyz", action="store_true")
     args = parser.parse_args()
     main(args)
