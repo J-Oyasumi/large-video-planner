@@ -1,0 +1,26 @@
+defaults:
+  - wan_rgbxyz
+  - _self_
+
+lora:
+  enabled: true
+  rank: 16
+  alpha: 16
+  dropout: 0.0
+  target_modules:
+    - self_attn.q
+    - self_attn.k
+    - self_attn.v
+    - self_attn.o
+    - cross_attn.q
+    - cross_attn.k
+    - cross_attn.v
+    - cross_attn.o
+    - cross_attn.k_img
+    - cross_attn.v_img
+  train_modality_embedding: true
+  train_head: false
+  train_patch_embedding: false
+  train_time_embedding: false
+  train_text_embedding: false
+  train_img_emb: false
