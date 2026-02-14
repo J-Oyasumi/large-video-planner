@@ -38,7 +38,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="根据比例拆分 CSV 数据集并打标签。")
     
     parser.add_argument("--input", type=str, required=True, help="原始 CSV 文件路径")
-    parser.add_argument("--ratio", type=float, default=0.2, help="测试集所占比例 (例如 0.2)")
+    parser.add_argument("--ratio", type=float, default=0.01, help="测试集所占比例 (例如 0.2)")
     parser.add_argument("--out_split", type=str, required=True, help="输出带有 split 列的 CSV 路径")
     parser.add_argument("--out_test", type=str, required=True, help="输出仅包含测试集的 CSV 路径")
 

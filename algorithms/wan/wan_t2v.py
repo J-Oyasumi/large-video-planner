@@ -650,11 +650,11 @@ class WanTextToVideo(BasePytorchAlgo):
                 pred, gt = torch.chunk(video_vis[i], 2, dim=-1)
                 pred = pred.cpu().numpy()
                 gt = gt.cpu().numpy()
-                iio.imwrite(os.path.join(output_dir, f"pred_{batch_idx}_{i}.mp4"), rearrange((pred * 255).astype(np.uint8), "t c h w -> t h w c"), fps=self.cfg.logging.fps)
-                iio.imwrite(os.path.join(output_dir, f"gt_{batch_idx}_{i}.mp4"), rearrange((gt * 255).astype(np.uint8), "t c h w -> t h w c"), fps=self.cfg.logging.fps)
+                iio.imwrite(os.path.join(output_dir, f"pred_rgb_{batch_idx}_{i}.mp4"), rearrange((pred * 255).astype(np.uint8), "t c h w -> t h w c"), fps=self.cfg.logging.fps)
+                iio.imwrite(os.path.join(output_dir, f"gt_rgb_{batch_idx}_{i}.mp4"), rearrange((gt * 255).astype(np.uint8), "t c h w -> t h w c"), fps=self.cfg.logging.fps)
             else:
                 pred = video_vis[i].cpu().numpy()
-                iio.imwrite(os.path.join(output_dir, f"pred_{batch_idx}_{i}.mp4"), rearrange((pred * 255).astype(np.uint8), "t c h w -> t h w c"), fps=self.cfg.logging.fps)
+                iio.imwrite(os.path.join(output_dir, f"pred_rgb_{batch_idx}_{i}.mp4"), rearrange((pred * 255).astype(np.uint8), "t c h w -> t h w c"), fps=self.cfg.logging.fps)
 
     def maybe_reset_socket(self):
         if not self.socket:
