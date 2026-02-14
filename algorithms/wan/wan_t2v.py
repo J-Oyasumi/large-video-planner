@@ -637,10 +637,6 @@ class WanTextToVideo(BasePytorchAlgo):
                 )
 
         if is_rank_zero and self.cfg.logging.save_local:
-            print("======================")
-            print("Rank 0")
-            print(video_vis.shape)
-            print("======================")
             self.visualize_local(video_vis, batch_idx)
         
     def visualize_local(self, video_vis, batch_idx):

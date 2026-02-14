@@ -40,8 +40,8 @@ srun \
     algorithm.logging.save_local=true \
     algorithm.logging.save_dir="${OUTPUT_DIR}" \
     algorithm.logging.video_type=grid \
-    algorithm.hist_guidance=1.5 \
-    algorithm.lang_guidance=2.5 \
+    algorithm.hist_guidance=0.0 \
+    algorithm.lang_guidance=0.0 \
     dataset=test_rgb \
     dataset.data_root="${DATA_ROOT}" \
     dataset.metadata_path="${METADATA_CSV}" \
